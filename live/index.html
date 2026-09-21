@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Convoy — Live</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+  :root {
+    --bg: #f4f4f6; --card: #ffffff; --text: #0f0f14; --muted: #6b6b70; --border: #e0e0e6;
+    --accent: #0a84ff; --ok: #4a8f68; --warn: #b8873f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f14; --card: #151519; --text: #ffffff; --muted: #9a9aa0; --border: #2a2a34;
+      --accent: #0a84ff; --ok: #6fb98c; --warn: #d9a55c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  #map { position: absolute; inset: 0; }
+
+  .card {
+    position: absolute; left: 12px; right: 12px; top: max(12px, env(safe-area-inset-top));
+    max-width: 460px; margin: 0 auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+    padding: 14px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
+    z-index: 5;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .name { font-size: 17px; font-weight: 800; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill {
+    font-size: 11px; font-weight: 800; letter-spacing: .5px; padding: 3px 9px; border-radius: 10px;
+    color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent);
+  }
+  .pill.stale { color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, transparent); }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .sub b { color: var(--text); font-weight: 700; }
+  .ride { color: var(--muted); font-size: 12.5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+  .banner {
+    position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    font-size: 13px; padding: 8px 14px; border-radius: 16px; z-index: 5; display: none;
+  }
+  .recenter {
+    position: absolute; right: 14px; bottom: max(18px, env(safe-area-inset-bottom)); z-index: 5;
+    background: var(--card); border: 1px solid var(--border); color: var(--accent);
+    font: inherit; font-size: 13px; font-weight: 700; padding: 10px 16px; border-radius: 22px; display: none;
+  }
+
+  /* Full-screen message for links that aren't live. */
+  .status {
+    position: absolute; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+    padding: 28px; text-align: center; background: var(--bg);
+  }
+  .status h1 { font-size: 22px; margin: 0 0 8px; }
+  .status p { color: var(--muted); margin: 0; max-width: 340px; }
+
+  .dot {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+    border: 3px solid #fff; box-shadow: 0 0 0 0 rgba(10,132,255,.5); animation: pulse 2s infinite;
+  }
+  .dot.stale { background: var(--warn); animation: none; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 16px rgba(10,132,255,0); } 100% { box-shadow: 0 0 0 0 rgba(10,132,255,0); } }
+  .flag {
+    width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    background: #c17a6e; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="card" id="card" style="display:none">
+  <div class="row">
+    <div class="name" id="name"></div>
+    <div class="pill" id="pill">LIVE</div>
+  </div>
+  <div class="sub" id="sub"></div>
+  <div class="ride" id="ride" style="display:none"></div>
+</div>
+
+<div class="banner" id="banner">Reconnecting…</div>
+<button class="recenter" id="recenter">Recenter</button>
+
+<div class="status" id="status"><div><h1 id="status-title"></h1><p id="status-body"></p></div></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+(function () {
+  // Filled in by scripts/build-live-page.js from lib/supabase.js. This is the
+  // publishable key — the same one already shipped inside the app — and
+  // `anon` can only call get_live_share (see add_live_share.sql).
+  var SUPABASE_URL = 'https://ikllmnootyvipuhrqopy.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_iai-g3b1mNvagHKXSTkd3A_Kkk3R4x0';
+
+  var POLL_MS = 5000;
+  var STALE_MS = 90 * 1000;
+
+  var $ = function (id) { return document.getElementById(id); };
+  // Every piece of text from the database goes in through textContent, never
+  // innerHTML: rider and ride names are typed by users, and this page is
+  // open to anyone holding the link.
+  var setText = function (id, text) { $(id).textContent = text; };
+
+  var token = new URLSearchParams(location.search).get('t') || '';
+  var dark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+
+  var map, riderMarker, riderEl, destMarker;
+  var mapReady = false, following = true, hasFitOnce = false;
+  var current = null, anim = null, timer = null;
+  var pending = null; // data received before the map finished loading
+
+  function showStatus(title, body) {
+    setText('status-title', title);
+    setText('status-body', body);
+    $('status').style.display = 'flex';
+    $('card').style.display = 'none';
+    stopPolling();
+  }
+
+  function timeAgo(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    if (s < 10) return 'just now';
+    if (s < 60) return s + 's ago';
+    var m = Math.round(s / 60);
+    if (m < 60) return m + ' min ago';
+    var h = Math.floor(m / 60);
+    return h + ' h ' + (m % 60) + ' min ago';
+  }
+
+  function initMap() {
+    map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/' + (dark ? 'fiord' : 'positron'),
+      center: [0, 20], zoom: 1.5, attributionControl: { compact: true }
+    });
+    map.on('load', function () { mapReady = true; if (pending) { render(pending); pending = null; } });
+    // Panning away means "let me look around" — stop dragging the camera
+    // back to the rider on every update until they ask for it.
+    map.on('dragstart', function () { following = false; $('recenter').style.display = 'block'; });
+    $('recenter').addEventListener('click', function () {
+      following = true; $('recenter').style.display = 'none';
+      if (current) map.easeTo({ center: [current.lng, current.lat], duration: 500 });
+    });
+  }
+
+  function parseRoute(raw) {
+    try {
+      var pts = JSON.parse(raw); // stored as [[lat, lng], ...]
+      return pts.map(function (p) { return [p[1], p[0]]; });
+    } catch (e) { return null; }
+  }
+
+  function ensureRoute(routeCoords) {
+    if (!routeCoords || routeCoords.length < 2 || map.getSource('route')) return;
+    map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: routeCoords } } });
+    map.addLayer({ id: 'route', type: 'line', source: 'route',
+      paint: { 'line-color': '#3b82f6', 'line-width': 5, 'line-opacity': .85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+    var end = routeCoords[routeCoords.length - 1];
+    var flag = document.createElement('div'); flag.className = 'flag';
+    destMarker = new maplibregl.Marker({ element: flag, anchor: 'bottom' }).setLngLat(end).addTo(map);
+  }
+
+  // Glide to each new position instead of jumping: updates arrive every few
+  // seconds, and a marker that teleports reads as a glitch.
+  function moveTo(lng, lat) {
+    if (!riderMarker) {
+      riderEl = document.createElement('div'); riderEl.className = 'dot';
+      riderMarker = new maplibregl.Marker({ element: riderEl }).setLngLat([lng, lat]).addTo(map);
+      current = { lng: lng, lat: lat };
+      return;
+    }
+    var from = { lng: current.lng, lat: current.lat };
+    var start = performance.now(), dur = 1400;
+    if (anim) cancelAnimationFrame(anim);
+    (function step(now) {
+      var t = Math.min(1, (now - start) / dur);
+      current = { lng: from.lng + (lng - from.lng) * t, lat: from.lat + (lat - from.lat) * t };
+      riderMarker.setLngLat([current.lng, current.lat]);
+      if (following && hasFitOnce) map.setCenter([current.lng, current.lat]);
+      if (t < 1) anim = requestAnimationFrame(step);
+    })(start);
+  }
+
+  function render(d) {
+    if (!mapReady) { pending = d; return; }
+    $('status').style.display = 'none';
+
+    if (d.status === 'invalid') { showStatus("This link isn't valid", 'It may have been stopped, or it has expired.'); return; }
+    if (d.status === 'ended') { showStatus('This ride has ended', d.ride_name ? d.ride_name : ''); return; }
+    if (d.status === 'waiting') { showStatus('Waiting for a location', "The rider hasn't shared a position yet, or has left the ride."); startPolling(); return; }
+
+    $('card').style.display = 'block';
+    setText('name', d.rider_name || 'Rider');
+
+    var age = d.updated_at ? Date.now() - Date.parse(d.updated_at) : 0;
+    var stale = age > STALE_MS;
+    var pill = $('pill'); pill.textContent = stale ? 'LAST SEEN' : 'LIVE'; pill.className = 'pill' + (stale ? ' stale' : '');
+    if (riderEl) riderEl.className = 'dot' + (stale ? ' stale' : '');
+
+    var bits = [];
+    if (typeof d.speed_kmh === 'number' && d.speed_kmh >= 3) bits.push(Math.round(d.speed_kmh) + ' km/h');
+    bits.push('Updated ' + timeAgo(age));
+    setText('sub', bits.join(' · '));
+
+    var rideBits = [];
+    if (d.ride_name) rideBits.push(d.ride_name);
+    if (d.destination) rideBits.push('to ' + d.destination);
+    setText('ride', rideBits.join(' · '));
+    $('ride').style.display = rideBits.length ? 'block' : 'none';
+
+    var route = parseRoute(d.route);
+    ensureRoute(route);
+    moveTo(d.longitude, d.latitude);
+
+    if (!hasFitOnce) {
+      hasFitOnce = true;
+      var b = new maplibregl.LngLatBounds([d.longitude, d.latitude], [d.longitude, d.latitude]);
+      if (route) route.forEach(function (c) { b.extend(c); });
+      map.fitBounds(b, { padding: { top: 130, bottom: 70, left: 40, right: 40 }, maxZoom: 15, duration: 0 });
+    }
+  }
+
+  function poll() {
+    fetch(SUPABASE_URL + '/rest/v1/rpc/get_live_share', {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_token: token })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).then(function (d) {
+      $('banner').style.display = 'none';
+      render(d);
+    }).catch(function () {
+      // Keep whatever was last shown; a dropped request shouldn't blank the
+      // page, just say it's retrying.
+      $('banner').style.display = 'block';
+    });
+  }
+
+  function startPolling() { if (!timer) timer = setInterval(poll, POLL_MS); }
+  function stopPolling() { if (timer) { clearInterval(timer); timer = null; } }
+
+  // No point polling a tab nobody is looking at.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) stopPolling();
+    else if (current || pending || mapReady) { poll(); startPolling(); }
+  });
+
+  if (!/^[0-9a-f]{32}$/i.test(token)) {
+    showStatus("This link isn't valid", 'Check that you opened the whole link.');
+  } else {
+    initMap();
+    poll();
+    startPolling();
+  }
+})();
+</script>
+</body>
+</html>
