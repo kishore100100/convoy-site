@@ -16,13 +16,14 @@
 </head>
 <body>
 <h1>Convoy — Privacy Policy</h1>
-<p class="updated">Last updated 20 September 2026</p>
+<p class="updated">Last updated 21 September 2026</p>
 <p>Convoy is a beta app for riding groups: it shows everyone in a ride on a shared live map. That only works by sharing your location with the people you ride with, so this page explains plainly what is collected, who sees it, and where it goes.</p>
 <h2>What Convoy collects</h2>
 <p>There are no accounts, emails or passwords. When you first open the app it creates an anonymous identity for you; nothing links it to who you are beyond the name you type.</p>
 <ul>
 <li>Your name, exactly as you type it when you create or join a ride.</li>
-<li>Your live location and speed, while you are in a live ride and the app is open. It is sent every few seconds while you move, and periodically while you are stopped.</li>
+<li>Your live location and speed, while you are in a live ride. It is sent every few seconds while you move, and periodically while you are stopped. On Android this carries on with the screen locked or another app open, and stops when the ride ends or you leave it.</li>
+<li>Your phone's battery level and whether power saving is on, read on the phone only to decide how often to check your location. They are not sent anywhere.</li>
 <li>Ride details: the route, destination, ride name, and who the leader is.</li>
 <li>Reports made during a ride: pitstop reports, regroup points and SOS alerts, each with your name and the position where you made them.</li>
 <li>A record of finished rides: ride name, distance, duration, route, and the names of the riders who were on it.</li>
@@ -52,8 +53,9 @@
 <li>The public OSRM routing service calculates routes and snaps GPS points to roads. It receives the start and end of a planned route, and the recent GPS path of riders who have left the planned route.</li>
 </ul>
 <h2>How long it is kept</h2>
-<p>Your live position is removed when you leave a ride or the leader ends it, and lobby entries are removed when the ride starts. Live location links stop working as described above, though the record that one existed is kept with your other ride data.</p>
-<p>Everything else is kept until it is deleted by hand: finished ride records, pitstop and SOS reports, ride details, and bug reports. There is not yet a button in the app to delete these, so if you want yours removed, send a request through Settings, Report a problem, and include the Rider ID shown under Settings, Support.</p>
+<p>Your live position is removed when you leave a ride or the leader ends it, and lobby entries are removed when the ride starts. If your phone dies mid-ride, a position that has not updated for 12 hours is removed automatically.</p>
+<p>A ride nobody started is removed after 24 hours. Once a ride has ended, its details, its pitstop and SOS reports and any live location links are removed after 7 days. Bug and error reports are removed after 90 days. The record of a finished ride in your ride history (ride name, distance, duration, route and the names of the riders) is kept for 365 days.</p>
+<p>You do not have to wait for any of that: Settings, Delete my data removes everything listed here at once.</p>
 
 <h2>Your choices</h2>
 
@@ -62,9 +64,11 @@
 <li>Notifications are optional. Declining them only means you will not be alerted while the app is closed.</li>
 <li>The camera is used only to scan a ride's QR code. Nothing from the camera is stored or sent.</li>
 <li>You can leave a ride at any time, which stops sharing your position immediately.</li>
+<li>You can delete your data at any time from Settings, Delete my data. It removes your name, the rides you created, your ride history entries, your reports and your anonymous identity from Convoy's servers, and resets the app on your phone. In finished-ride records that other riders share, you are taken out and your name is replaced with &quot;A former rider&quot;. If you are leading a ride that other riders are still in, end it or hand it over first.</li>
 </ul>
 <h2>Location and background use</h2>
-<p>Convoy shares your location only while the app is open on screen. It does not track you in the background, and it does not track you when you are not in a ride. If you lock your phone or switch apps, your position stops updating for the group.</p>
+<p>Convoy only tracks your location while you are in a live ride, and never when you are not. During a ride, tracking continues when you lock your phone or switch to another app, so the group can still see you. On Android, that is done with a foreground service, and a &quot;Convoy ride in progress&quot; notification stays visible for as long as it is running.</p>
+<p>Tracking stops as soon as you leave the ride, the ride ends, or you close the app. Convoy does not ask for the &quot;Allow all the time&quot; location permission.</p>
 
 <h2>Security</h2>
 <p>Data travels over encrypted connections, and the database is set up so that only riders in a ride can read that ride's locations and reports. This is a beta app, so please do not treat it as a hardened system.</p>
